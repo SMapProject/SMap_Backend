@@ -23,8 +23,8 @@ DB_CONFIG = {
     "password": os.getenv("DB_PASSWORD")
 }
 
-SEARCH_QUERY = "사고" 
-DISPLAY_COUNT = 100  
+SEARCH_QUERY = "사건"
+DISPLAY_COUNT = 100
 
 def news_link(query, count):
     headers = {"X-Naver-Client-Id": CLIENT_ID, "X-Naver-Client-Secret": CLIENT_SECRET}
@@ -76,7 +76,6 @@ event_terms.update(["운행정지","운행","중단","재개","사고","조사",
 
 def parse_event_datetime(content, news_datetime):
     final_dt = news_datetime
-
     m = re.search(r'(\d{1,2})일\s*(오전|오후)?\s*(\d{1,2})시\s*(\d{1,2})분', content)
     if m:
         day, ampm, hour, minute = int(m.group(1)), m.group(2), int(m.group(3)), int(m.group(4))
@@ -86,7 +85,6 @@ def parse_event_datetime(content, news_datetime):
         last_day = calendar.monthrange(year, month)[1]
         final_dt = final_dt.replace(day=min(day,last_day), hour=hour, minute=minute, second=0, microsecond=0)
         return final_dt
-
     m_day = re.search(r'(\d{1,2})일', content)
     if m_day:
         day = int(m_day.group(1))
@@ -94,7 +92,6 @@ def parse_event_datetime(content, news_datetime):
         last_day = calendar.monthrange(year, month)[1]
         final_dt = final_dt.replace(day=min(day,last_day))
         return final_dt
-
     m_time = re.search(r'(오전|오후)?\s*(\d{1,2})시\s*(\d{1,2})분', content)
     if m_time:
         ampm, hour, minute = m_time.group(1), int(m_time.group(2)), int(m_time.group(3))
@@ -102,13 +99,56 @@ def parse_event_datetime(content, news_datetime):
         if ampm == "오전" and hour == 12: hour = 0
         final_dt = final_dt.replace(hour=hour, minute=minute, second=0, microsecond=0)
         return final_dt
-
     return final_dt
+
+def extract_location(title, content):
+    doc_full = title + " " + content
+    location_candidates = set()
+    facility_patterns = [
+        r'[가-힣0-9·\-]{2,}(?:역|정류장|터미널|공항|학교|병원|대학교|고등학교|중학교|초등학교)',
+        r'[가-힣0-9·\-]{2,}(?:빌딩|타워|센터|프라자|백화점|마트|아파트|오피스텔|주차장|호텔|펜션|관광호텔|리조트)',
+        r'[가-힣0-9·\-]{2,}(?:공장|창고|주유소|공원|시장|놀이공원|지하주차장|대형마트|컨벤션센터)',
+    ]
+    for p in facility_patterns:
+        location_candidates.update(re.findall(p, doc_full))
+    context_patterns = [
+        r'([가-힣0-9·\-]{2,}(?:역|터미널|빌딩|병원|학교|마트|아파트|공원))\s*(?:에서|근처|인근)',
+        r'([가-힣0-9·\-]{2,}(?:로|길))\s*(?:에서|근처|인근)'
+    ]
+    for p in context_patterns:
+        location_candidates.update(re.findall(p, doc_full))
+    admin_patterns = [
+        r'[가-힣]{2,}(?:시|도|군|구|읍|면|동|리)',
+        r'[가-힣0-9·\-]{2,}(?:로|길)'
+    ]
+    for p in admin_patterns:
+        location_candidates.update(re.findall(p, doc_full))
+    location_candidates.update(re.findall(r'([가-힣0-9·\-]{2,})\s*\(', doc_full))
+    location_candidates = {c for c in location_candidates if not re.search(r'\d+원|\d+억|\d+달러|\d+명|\d+세', c)}
+    if not location_candidates:
+        return "위치 불명"
+    scored = []
+    priority_suffix = ("빌딩", "타워", "센터", "역", "병원", "마트", "아파트", "학교", "프라자", "호텔", "공항", "터미널")
+    admin_suffix = ("시", "도", "군", "구", "읍", "면", "동", "리")
+    for c in location_candidates:
+        score = 0
+        if c in title:
+            score += 0.4
+        if any(c.endswith(suf) for suf in priority_suffix):
+            score += 0.3
+        if any(c.endswith(suf) for suf in admin_suffix):
+            score += 0.35
+        score += len(c) * 0.02
+        scored.append((score, c))
+    m_context = re.findall(r'([가-힣]{2,}(?:시|도|군|구))\s*(?:에서|일대|지역|주거지)', content)
+    for loc in m_context:
+        scored = [(s+0.5 if c==loc else s, c) for s,c in scored]
+    scored.sort(reverse=True)
+    return scored[0][1]
 
 def news_keyword(title, content, news_datetime):
     doc = title + " " + content
     keywords = keyword_model.extract_keywords(doc, keyphrase_ngram_range=(1,2), top_n=12)
-
     crime_type = "분류 불가"
     for category, kw_list in crime_categories.items():
         for kw, _ in keywords:
@@ -123,43 +163,13 @@ def news_keyword(title, content, news_datetime):
         cosine_scores = util.cos_sim(kw_embedding, cat_embeddings)[0]
         best_match_idx = int(cosine_scores.argmax())
         crime_type = f"{category_labels[best_match_idx]} 사건"
-
-    location_keyword = []
-
-    doc_full = title + " " + content
-
-    location_keyword += re.findall(r'[가-힣]{2,}(?:시|도|군|구|읍|면)', doc_full)
-    location_keyword += re.findall(r'[가-힣0-9·\-]{2,}(?:역|정류장|터미널|공항|학교|병원)', doc_full)
-    location_keyword += re.findall(r'([가-힣0-9·\-]{2,})\s*\(', doc_full)
-
-    location_keyword += re.findall(r'[가-힣]{2,}(?:동|리)', doc_full)
-
-    location_keyword = [c for c in location_keyword if not re.search(r'\d|억원|만원|달러', c)]
-
-    location = "위치 불명"
-    if location_keyword:
-        location_seed = "서울 부산 인천 대구 대전 광주 용인 수원 파주 경기 강원 충북 충남 전북 전남 경북 경남 제주 역 정류장 터미널 공항 학교 병원"
-        seed_emb = sbert.encode(location_seed, convert_to_tensor=True)
-        best_score, best_loc = -1, None
-        for c in location_keyword:
-            emb = sbert.encode(c, convert_to_tensor=True)
-            sim = float(util.cos_sim(emb, seed_emb)[0][0])
-            if c in title:
-                sim += 0.25
-            if sim > best_score:
-                best_score, best_loc = sim, c
-        if best_loc:
-            location = best_loc
-
+    location = extract_location(title, content)
     dt = parse_event_datetime(content, news_datetime)
     crime_day = dt.strftime("%Y-%m-%d %H:%M:%S")
-
     investigation = any(word in content for word in ["조사", "수사", "국토부", "경찰", "검찰"])
-
     summary = f"{location}에서 {crime_day} {crime_type}이 발생했다."
     if investigation:
         summary += " 관련 기관에서 조사가 진행 중이다."
-
     return {
         "범죄유형": crime_type,
         "위치": location,
@@ -189,8 +199,8 @@ news_links = news_link(SEARCH_QUERY, DISPLAY_COUNT)
 for link in news_links:
     title, content = naver_news_text(link)
     if not title or not content:
-        continue  
-    news_datetime = datetime.now()  
+        continue
+    news_datetime = datetime.now()
     result = news_keyword(title, content, news_datetime)
     save_db(result, link)
     print(f"DB 저장 완료: {title}")
