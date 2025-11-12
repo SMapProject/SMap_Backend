@@ -15,8 +15,8 @@ CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 NAVER_NEWS_URL = "https://openapi.naver.com/v1/search/news.json"
 
-SEARCH_QUERY = "사고" #종류
-DISPLAY_COUNT = 1  #개수
+SEARCH_QUERY = "살인" 
+DISPLAY_COUNT = 10  
 
 def news_link(query, count):
     headers = {"X-Naver-Client-Id": CLIENT_ID, "X-Naver-Client-Secret": CLIENT_SECRET}

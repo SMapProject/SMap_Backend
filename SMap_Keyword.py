@@ -28,20 +28,16 @@ def news_keyword(title, content, news_datetime):
         best_match_idx = int(cosine_scores.argmax())
         crime_type = f"{category_labels[best_match_idx]} 사건"
 
-    # 위치 후보 추출 (본문+제목)
     regex_candidates = []
 
     doc_full = title + " " + content
 
-    # 기존 후보
     regex_candidates += re.findall(r'[가-힣]{2,}(?:시|도|군|구|읍|면)', doc_full)
     regex_candidates += re.findall(r'[가-힣0-9·\-]{2,}(?:역|정류장|터미널|공항|학교|병원)', doc_full)
     regex_candidates += re.findall(r'([가-힣0-9·\-]{2,})\s*\(', doc_full)
 
-    # 행정동/리 추가
     regex_candidates += re.findall(r'[가-힣]{2,}(?:동|리)', doc_full)
 
-    # 숫자/금액 제외
     regex_candidates = [c for c in regex_candidates if not re.search(r'\d|억원|만원|달러', c)]
 
     location = "위치 불명"
@@ -52,7 +48,6 @@ def news_keyword(title, content, news_datetime):
         for c in regex_candidates:
             emb = sbert.encode(c, convert_to_tensor=True)
             sim = float(util.cos_sim(emb, seed_emb)[0][0])
-            # 제목 포함 시 보너스 가산
             if c in title:
                 sim += 0.25
             if sim > best_score:
@@ -60,14 +55,11 @@ def news_keyword(title, content, news_datetime):
         if best_loc:
             location = best_loc
 
-    # 날짜/시간 결합
     final_event_dt = parse_event_datetime(content, news_datetime)
     crime_day = final_event_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    # 조사 여부
     investigation = any(word in content for word in ["조사", "수사", "국토부", "경찰", "검찰"])
 
-    # 요약
     summary = f"{location}에서 {crime_day} {crime_type}이 발생했다."
     if investigation:
         summary += " 관련 기관에서 조사가 진행 중이다."

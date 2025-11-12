@@ -23,8 +23,8 @@ DB_CONFIG = {
     "password": os.getenv("DB_PASSWORD")
 }
 
-SEARCH_QUERY = "사건"
-DISPLAY_COUNT = 100
+SEARCH_QUERY = "범죄"
+DISPLAY_COUNT = 20
 
 def news_link(query, count):
     headers = {"X-Naver-Client-Id": CLIENT_ID, "X-Naver-Client-Secret": CLIENT_SECRET}

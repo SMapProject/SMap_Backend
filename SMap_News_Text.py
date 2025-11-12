@@ -21,7 +21,7 @@ def naver_news_text(url):
             content_el = page.query_selector('#dic_area')
             content_text = content_el.inner_text().strip() if content_el else '본문 없음'
         except Exception as e:
-            print(f"네이버 뉴스와 구조 다름 : {url}") #건너뛰기
+            print(f"네이버 뉴스와 구조 다름 : {url}") 
             title_text = None
             content_text = None
         browser.close()
